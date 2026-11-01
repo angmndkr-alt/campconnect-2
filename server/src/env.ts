@@ -21,8 +21,7 @@ const schema = z.object({
   // Email / SMTP (optional — dev mode works without these)
   SMTP_HOST: z.string().default(''),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
-  SMTP_SECURE: z.string().transform((v) => v === 'true').default('false'),
-  SMTP_USER: z.string().default(''),
+  SMTP_SECURE: z.string().default('false').transform((v) => v === 'true'), SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   EMAIL_FROM: z.string().default('CampConnect <noreply@campconnect.pvppcoe.ac.in>'),
   // Reminder timings in minutes before the event
