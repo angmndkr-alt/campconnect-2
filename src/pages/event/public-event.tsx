@@ -41,9 +41,14 @@ export default function PublicEventPage() {
   const eventXp = event?.xp ?? localFallback?.xp ?? 80;
   const requiresApproval = event?.requires_approval ?? false;
 
-  const ticketTypes = event?.ticket_types?.length
+  const rawTicketTypes = event?.ticket_types?.length
     ? event.ticket_types
     : [{ id: 't-free', name: 'General Admission Pass', price: 0, ticket_kind: requiresApproval ? 'approval' : 'free' }];
+
+  // Deduplicate tickets by name to prevent multiple identical passes from displaying
+  const ticketTypes = rawTicketTypes.filter((t, index, self) =>
+    index === self.findIndex((other) => other.name.trim().toLowerCase() === t.name.trim().toLowerCase())
+  );
 
   const questions = event?.registration_questions || [];
 

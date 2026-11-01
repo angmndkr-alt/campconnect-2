@@ -140,9 +140,22 @@ export async function registerForEvent(input: {
 }): Promise<GuestRow & { status_label: string }> {
   const email=normaliseEmail(input.email);
   return tx(async client=>{
+    let profileId = input.profileId;
+    if (profileId) {
+      const p = (await client.query('SELECT id, lower(email) AS email FROM profiles WHERE id=$1', [profileId])).rows[0];
+      if (!p || p.email !== email) {
+        profileId = undefined;
+      }
+    }
+    if (!profileId) {
+      const pByEmail = (await client.query('SELECT id FROM profiles WHERE lower(email)=$1', [email])).rows[0];
+      if (pByEmail) {
+        profileId = pByEmail.id;
+      }
+    }
     const event=(await client.query<EventCard>('SELECT * FROM events WHERE id=$1 FOR UPDATE',[input.eventId])).rows[0];
     if(!event)throw notFound('That event does not exist.');if(event.is_canceled||!event.is_published)throw badRequest('Registration for this event is not open.');
-    const exists=(await client.query('SELECT id FROM guests WHERE event_id=$1 AND lower(email)=$2 AND is_invalidated=false',[input.eventId,email])).rows[0];if(exists)throw conflict('You are already registered for this event.');
+    const exists=(await client.query('SELECT id FROM guests WHERE event_id=$1 AND is_invalidated=false AND (lower(email)=$2 OR ($3::uuid IS NOT NULL AND profile_id=$3::uuid))',[input.eventId,email,profileId||null])).rows[0];if(exists)throw conflict('You are already registered for this event.');
     const ticket=(await client.query(`SELECT * FROM ticket_types WHERE event_id=$1 AND is_hidden=false AND ($2::uuid IS NULL OR id=$2::uuid) ORDER BY sort_order,created_at LIMIT 1`,[input.eventId,input.ticketTypeId||null])).rows[0];
     if(!ticket)throw badRequest('That ticket type is not available.');if(ticket.payment_type==='paid')throw badRequest('Paid checkout is not connected for this event.');
     const qs=(await client.query('SELECT * FROM registration_questions WHERE event_id=$1',[input.eventId])).rows;
@@ -150,9 +163,9 @@ export async function registerForEvent(input: {
     if(input.answers?.some(a=>!qs.some(q=>q.id===a.questionId)))throw badRequest('A question is not part of this event.');
     let status:ApprovalStatus=ticket.requires_approval||event.requires_approval?PENDING:APPROVED;
     if(status===APPROVED&&!await hasRoom(client,event,ticket.id)){if(!event.waitlist_enabled)throw conflict('This event or ticket tier is full.');status=WAITLIST;}
-    const row=(await client.query<GuestRow>(`INSERT INTO guests(event_id,ticket_type_id,profile_id,full_name,email,phone,department,year,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${PUBLIC_GUEST_COLUMNS}`,[input.eventId,ticket.id,input.profileId||null,input.fullName.trim(),email,input.phone||null,input.department||null,input.year||null,status])).rows[0];
+    const row=(await client.query<GuestRow>(`INSERT INTO guests(event_id,ticket_type_id,profile_id,full_name,email,phone,department,year,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${PUBLIC_GUEST_COLUMNS}`,[input.eventId,ticket.id,profileId||null,input.fullName.trim(),email,input.phone||null,input.department||null,input.year||null,status])).rows[0];
     for(const answer of input.answers||[])if(answer.answer.trim())await client.query('INSERT INTO registration_answers(guest_id,question_id,answer_text) VALUES($1,$2,$3)',[row.id,answer.questionId,answer.answer]);
-    await client.query('INSERT INTO activity_log(user_id,calendar_id,action,details) VALUES($1,$2,$3,$4)',[input.profileId||null,event.calendar_id,'guest_registered',event.title]);
+    await client.query('INSERT INTO activity_log(user_id,calendar_id,action,details) VALUES($1,$2,$3,$4)',[profileId||null,event.calendar_id,'guest_registered',event.title]);
     return {...row,status_label:status==='pending_approval'?'Pending approval':status==='waitlist'?'Waitlist':'Approved'};
   });
 }
@@ -218,6 +231,7 @@ export type CheckInResult = {
   guest: GuestRow;
   alreadyCheckedIn: boolean;
   ticketName: string | null;
+  eventTitle?: string;
 };
 
 /**
@@ -226,12 +240,19 @@ export type CheckInResult = {
  */
 export async function checkIn(input:{eventId:string;qrToken?:string;guestId?:string;method:CheckinMethod;checkedInBy:string}):Promise<CheckInResult>{
  return tx(async client=>{
-  const event=(await client.query('SELECT id FROM events WHERE id=$1 FOR UPDATE',[input.eventId])).rows[0];if(!event)throw notFound('Event not found.');
+  const event=(await client.query('SELECT id, title, is_canceled FROM events WHERE id=$1 FOR UPDATE',[input.eventId])).rows[0];
+  if(!event)throw notFound('Event not found.');
+  if(event.is_canceled)throw badRequest('This event has been cancelled.');
   const guest=(await client.query<GuestRow>(`SELECT ${PUBLIC_GUEST_COLUMNS} FROM guests WHERE ${input.qrToken?'qr_token=$1':'id=$1'} FOR UPDATE`,[input.qrToken||input.guestId])).rows[0];
-  if(!guest)throw notFound('No ticket matches that scan.');if(guest.event_id!==input.eventId)throw badRequest('That ticket belongs to a different event.');if(guest.is_invalidated)throw badRequest('That ticket is no longer valid.');if(guest.status!=='approved')throw badRequest('This guest has not been approved for entry.');
-  if(guest.checked_in_at)return {guest,alreadyCheckedIn:true,ticketName:null};
+  if(!guest)throw notFound('No ticket matches that scan.');
+  if(guest.event_id!==input.eventId)throw badRequest('That ticket belongs to a different event.');
+  if(guest.is_invalidated)throw badRequest('That ticket is no longer valid.');
+  if(guest.status!=='approved')throw badRequest(guest.status==='declined'?'This registration has been declined.':'This guest has not been approved for entry.');
+  const ticket=(await client.query('SELECT name FROM ticket_types WHERE id=$1',[guest.ticket_type_id])).rows[0];
+  if(guest.checked_in_at)return {guest,alreadyCheckedIn:true,ticketName:ticket?.name||null,eventTitle:event.title};
   await client.query('INSERT INTO check_ins(guest_id,event_id,checked_in_by,method) VALUES($1,$2,$3,$4)',[guest.id,input.eventId,input.checkedInBy,input.method]);
-  const updated=(await client.query<GuestRow>(`SELECT ${PUBLIC_GUEST_COLUMNS} FROM guests WHERE id=$1`,[guest.id])).rows[0];const ticket=(await client.query('SELECT name FROM ticket_types WHERE id=$1',[guest.ticket_type_id])).rows[0];return {guest:updated,alreadyCheckedIn:false,ticketName:ticket?.name||null};
+  const updated=(await client.query<GuestRow>(`SELECT ${PUBLIC_GUEST_COLUMNS} FROM guests WHERE id=$1`,[guest.id])).rows[0];
+  return {guest:updated,alreadyCheckedIn:false,ticketName:ticket?.name||null,eventTitle:event.title};
  });
 }
 export async function undoCheckIn(input:{eventId:string;guestId:string}):Promise<GuestRow>{

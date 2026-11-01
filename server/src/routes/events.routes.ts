@@ -46,6 +46,7 @@ const createEventSchema = z.object({
   requiresApproval: z.boolean().optional(),
   waitlistEnabled: z.boolean().optional(),
   isPublished: z.boolean().optional(),
+  isCanceled: z.boolean().optional(),
 });
 
 const updateEventSchema = createEventSchema.partial();

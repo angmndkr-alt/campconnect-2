@@ -15,6 +15,7 @@
     "reset": "tsx src/db/migrate.ts --drop && tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@types/nodemailer": "^8.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
@@ -22,6 +23,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "nodemailer": "^10.3.1",
     "pg": "^8.18.0",
     "pino": "^10.1.0",
     "pino-http": "^11.0.0",

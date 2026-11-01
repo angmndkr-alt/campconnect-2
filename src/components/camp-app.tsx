@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { Link, Route, Switch, useLocation } from "wouter";
-import { ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight, Home, Image, LockKeyhole, LogOut, Menu, MessageCircle, Moon, Pencil, Search, ShieldCheck, Sparkles, Sun, Trophy, Upload, UserRound, UsersRound, X, Zap, CheckCircle2, Trash2, Send, Plus, Star, Compass, Settings } from "lucide-react";
+import { ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight, Home, Image, LockKeyhole, LogOut, Menu, MessageCircle, Moon, Pencil, Search, ShieldCheck, Sparkles, Sun, Trophy, Upload, UserRound, UsersRound, X, Zap, CheckCircle2, Trash2, Send, Plus, Star, Compass, Settings, ChevronLeft } from "lucide-react";
 import { Brand } from "./brand";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
@@ -21,12 +21,21 @@ import { useCampStore, type EventItem, type PhotoAlbum, clubNames } from "@/lib/
 import { cn } from "@/lib/utils";
 
 const clubData=[
- {name:"CESA & CSI",icon:"CC",tone:"mint",members:512,blurb:"Civil and Computer engineering societies — builds, bytes and beyond."},
- {name:"MESA",icon:"M",tone:"amber",members:438,blurb:"Mechanical Engineering Students Association — machines, making and motorsports."},
- {name:"ECSA",icon:"E",tone:"purple",members:371,blurb:"Electronics & Communication students exploring circuits, signals and IoT."},
- {name:"ITSA",icon:"IT",tone:"coral",members:465,blurb:"Information Technology Students Association — code, cloud and community."},
- {name:"AIML",icon:"AI",tone:"mint",members:524,blurb:"AI & Machine Learning club — models, hackathons and research jams."},
- {name:"Students Council",icon:"SC",tone:"amber",members:890,blurb:"The central student body behind every fest, league and campus celebration."},
+ {name:"CESA & CSI",icon:"CC",tone:"mint",members:512,department:"Computer & Civil Engineering",blurb:"Civil and Computer engineering societies — builds, bytes and beyond."},
+ {name:"MESA",icon:"M",tone:"amber",members:438,department:"Mechanical Engineering",blurb:"Mechanical Engineering Students Association — machines, making and motorsports."},
+ {name:"ECSA",icon:"E",tone:"purple",members:371,department:"Electronics & Telecommunication",blurb:"Electronics & Communication students exploring circuits, signals and IoT."},
+ {name:"ITSA",icon:"IT",tone:"coral",members:465,department:"Information Technology",blurb:"Information Technology Students Association — code, cloud and community."},
+ {name:"AIML",icon:"AI",tone:"mint",members:524,department:"Artificial Intelligence & Data Science",blurb:"AI & Machine Learning club — models, hackathons and research jams."},
+ {name:"Students Council",icon:"SC",tone:"amber",members:890,department:"Campus Central Council",blurb:"The central student body behind every fest, league and campus celebration."},
+];
+const collegeDepartments=[
+ "Computer Engineering",
+ "Information Technology",
+ "Electronics & Telecommunication",
+ "Mechanical Engineering",
+ "Artificial Intelligence & Data Science",
+ "Civil Engineering",
+ "Humanities & Applied Sciences",
 ];
 const tones:Record<string,string>={mint:"tone-mint",amber:"tone-amber",purple:"tone-purple",coral:"tone-coral"};
 const initials=(name:string)=>name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
@@ -39,7 +48,7 @@ function SectionHead({title,link,to}:{title:string;link?:string;to?:string}){ret
 function Avatar({name,size="md"}:{name:string;size?:"sm"|"md"|"lg"}){return <span className={cn("avatar tone-mint",size==="sm"&&"size-8 text-[11px]",size==="lg"&&"size-16 text-lg")}>{initials(name)}</span>}
 function AppShell({children,admin=false}:{children:ReactNode;admin?:boolean}) {
  const {auth,logout}=useCampStore(); const [path,setLocation]=useLocation();
- const nav=admin?[["/admin","Overview",Home],["/admin/events","Events",CalendarDays],["/admin/team","Team",UsersRound],["/admin/gallery","Gallery",Image],["/admin/chat","Chat",MessageCircle],["/admin/notifications","Notifications",Bell],["/admin/profile","Settings",Settings]] as const:[["/dashboard","Overview",Home],["/events","Events",CalendarDays],["/discover","Discover",Compass],["/clubs","Calendars",UsersRound],["/gallery","Gallery",Image],["/chat","Chat",MessageCircle],["/leaderboard","Leaderboard",Trophy],["/sports","Sports",Zap],["/xp","XP",Star],["/notifications","Notifications",Bell],["/profile","Settings",Settings]] as const;
+ const nav=admin?[["/admin","Overview",Home],["/admin/events","Events",CalendarDays],["/admin/team","Team",UsersRound],["/admin/gallery","Gallery",Image],["/admin/chat","Chat",MessageCircle],["/admin/notifications","Notifications",Bell],["/admin/profile","Settings",Settings]] as const:[["/dashboard","Overview",Home],["/discover","Discover",Compass],["/events","Events",CalendarDays],["/clubs","Clubs",UsersRound],["/calendar","Calendar",CalendarDays],["/gallery","Gallery",Image],["/chat","Chat",MessageCircle],["/leaderboard","Leaderboard",Trophy],["/sports","Sports",Zap],["/notifications","Notifications",Bell],["/profile","Settings",Settings]] as const;
  return <div className="app-shell"><SiteHeader/><div className="workspace-bar"><span className="workspace-label">{admin?"Host workspace":"Your campus"}</span><nav aria-label="Campus navigation">{nav.map(([to,label,Icon])=><Link key={to} href={to} aria-current={path===to?"page":undefined}><Icon size={15}/>{label}</Link>)}</nav><Button variant="ghost" size="icon" aria-label="Log out" onClick={()=>{logout();setLocation("/");}}><LogOut size={16}/></Button></div><main className="workspace-main">{children}</main><footer className="workspace-footer"><Brand/><span>{admin?"Bring your community together.":"A place for your people."}</span></footer></div>;
 }
 function PublicHome(){return <CampusHome/>}
@@ -56,24 +65,373 @@ function EventCard({event,admin=false,compact=false}:{event:EventItem;admin?:boo
 function StudentDashboard(){const {auth,events,registrations,studentStats}=useCampStore();const mine=events.filter(e=>registrations.includes(String(e.id)));return <><PageHead title={`Welcome, ${auth?.name?.split(" ")[0]||"student"}`} copy="Your registrations and upcoming campus events."/><div className="grid grid-cols-3 gap-3 mb-8">{[[mine.length,"Registrations"],[studentStats.attended,"Events attended"],[studentStats.xp,"Participation XP"]].map(([n,label])=><div className="stat" key={label}><b className="text-2xl">{n}</b><small>{label}</small></div>)}</div><section><SectionHead title="Your events" link="Discover events" to="/discover"/>{mine.length?<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{mine.map(e=><EventCard key={e.id} event={e}/>)}</div>:<div className="panel"><p>No registrations yet. Find an event and join in.</p><Link href="/discover" className="primary-link mt-4">Discover events</Link></div>}</section><section className="mt-10"><SectionHead title="Upcoming on campus"/><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{events.filter(e=>e.date>=new Date().toLocaleDateString('en-CA')).slice(0,3).map(e=><EventCard key={e.id} event={e}/>)}</div></section></>}
 function XPBar(){return <div className="mt-8"><div className="mb-2 flex items-center justify-between text-sm"><span className="font-semibold">Level 12 · Trailblazer</span><span className="text-muted-foreground">1,840 / 2,200 XP</span></div><div className="h-2.5 overflow-hidden rounded-full bg-muted"><div className="h-full w-[84%] rounded-full bg-primary shadow-glow"/></div><p className="mt-2 text-xs text-muted-foreground">360 XP to Level 13</p></div>}
 function EventsPage(){const {events}=useCampStore();const [club,setClub]=useState(new URLSearchParams(location.search).get("club")||"All clubs");const [category,setCategory]=useState("All");const filtered=events.filter(e=>(club==="All clubs"||e.club===club)&&(category==="All"||e.category===category));return <><PageHead eyebrow="Discover" title="Find your next thing." copy="Workshops, performances, tournaments and everything between." action={<Link href="/sports" className="inline-flex h-10 items-center gap-2 rounded-xl bg-secondary px-4 text-sm font-semibold">Sports hub <ArrowRight/></Link>}/><div className="mb-6 flex flex-wrap gap-3"><select aria-label="Filter by club" className="filter" value={club} onChange={e=>setClub(e.target.value)}><option>All clubs</option>{clubNames.map(c=><option key={c}>{c}</option>)}</select><div className="flex rounded-xl bg-card p-1">{["All","Cultural","Tech","Sports"].map(x=><Button key={x} size="sm" variant={category===x?"default":"ghost"} onClick={()=>setCategory(x)} className="rounded-lg">{x}</Button>)}</div></div>{filtered.length?<div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filtered.map(e=><EventCard key={e.id} event={e}/>)}</div>:<div className="panel text-center"><Search className="mx-auto size-8 text-muted-foreground"/><p className="mt-3">No events match these filters.</p></div>}</>}
-function ClubsPage(){const {followed,toggleFollow}=useCampStore();return <><PageHead eyebrow="Communities" title="Find your people." copy="Follow clubs to shape your event feed and unlock member-only moments."/><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{clubData.map(c=>{const following=followed.includes(c.name);return <article key={c.name} className="panel group"><div className="flex items-start justify-between"><span className={cn("grid size-14 place-items-center rounded-2xl border font-display text-xl font-bold",tones[c.tone])}>{c.icon}</span><Button variant={following?"secondary":"outline"} size="sm" onClick={()=>toggleFollow(c.name).catch(()=>{})} className="rounded-xl">{following?<><Check/>Following</>:<><UsersRound/>Follow</>}</Button></div><h2 className="mt-6 font-display text-xl font-bold">{c.name}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{c.blurb}</p><div className="mt-5 flex items-center justify-between border-t border-border pt-4 text-sm"><span className="flex items-center gap-2 text-muted-foreground"><UsersRound className="size-4"/>{c.members} members</span><Link href={`/events?club=${encodeURIComponent(c.name)}`} className="flex items-center gap-1 font-semibold text-primary">Events<ChevronRight className="size-4"/></Link></div></article>})}</div></>}
+function ClubsPage(){
+  const {followed,toggleFollow,events}=useCampStore();
+  return <>
+    <PageHead eyebrow="Communities" title="College clubs." copy="Discover college clubs, view their events and activities, and follow them to stay connected."/>
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      {clubData.map(c=>{
+        const following=followed.includes(c.name);
+        const clubEvents=events.filter(e=>e.club===c.name);
+        return <article key={c.name} className="panel group">
+          <div className="flex items-start justify-between">
+            <span className={cn("grid size-14 place-items-center rounded-2xl border font-display text-xl font-bold",tones[c.tone])}>{c.icon}</span>
+            <Button variant={following?"secondary":"outline"} size="sm" onClick={()=>toggleFollow(c.name).catch(()=>{})} className="rounded-xl">
+              {following?<><Check className="size-3 mr-1"/>Following</>:<><UsersRound className="size-3 mr-1"/>Follow</>}
+            </Button>
+          </div>
+          <h2 className="mt-5 font-display text-xl font-bold">{c.name}</h2>
+          <span className="mt-1 inline-block text-xs font-semibold text-primary">{c.department}</span>
+          <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{c.blurb}</p>
+          <div className="mt-5 flex items-center justify-between border-t border-border pt-4 text-sm">
+            <span className="flex items-center gap-2 text-muted-foreground"><UsersRound className="size-4"/>{c.members} members</span>
+            <Link href={`/events?club=${encodeURIComponent(c.name)}`} className="flex items-center gap-1 font-semibold text-primary">
+              {clubEvents.length} {clubEvents.length===1?'event':'events'}<ChevronRight className="size-4"/>
+            </Link>
+          </div>
+        </article>
+      })}
+    </div>
+  </>
+}
+
+function CalendarPage(){
+  const {events,attendedEvents}=useCampStore();
+  const [currentDate,setCurrentDate]=useState(()=>new Date());
+  const [selectedDate,setSelectedDate]=useState<string>(()=>new Date().toISOString().slice(0,10));
+
+  const year=currentDate.getFullYear();
+  const month=currentDate.getMonth();
+
+  const prevMonth=()=>setCurrentDate(new Date(year,month-1,1));
+  const nextMonth=()=>setCurrentDate(new Date(year,month+1,1));
+  const goToday=()=>{
+    const now=new Date();
+    setCurrentDate(new Date(now.getFullYear(),now.getMonth(),1));
+    setSelectedDate(now.toISOString().slice(0,10));
+  };
+
+  const monthName=currentDate.toLocaleString('default',{month:'long'});
+
+  const firstDayOfMonth=new Date(year,month,1);
+  const startDayIndex=firstDayOfMonth.getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+
+  const calendarCells:Array<{dateStr:string;dayNum:number;inCurrentMonth:boolean;isToday:boolean}>=[];
+  const prevMonthDays=new Date(year,month,0).getDate();
+  for(let i=startDayIndex-1;i>=0;i--){
+    const d=prevMonthDays-i;
+    const dateObj=new Date(year,month-1,d);
+    const dateStr=dateObj.toISOString().slice(0,10);
+    calendarCells.push({dateStr,dayNum:d,inCurrentMonth:false,isToday:false});
+  }
+  const todayStr=new Date().toISOString().slice(0,10);
+  for(let d=1;d<=daysInMonth;d++){
+    const dateObj=new Date(year,month,d);
+    const dateStr=dateObj.toISOString().slice(0,10);
+    calendarCells.push({dateStr,dayNum:d,inCurrentMonth:true,isToday:dateStr===todayStr});
+  }
+  const remainingCells=(7-(calendarCells.length%7))%7;
+  for(let d=1;d<=remainingCells;d++){
+    const dateObj=new Date(year,month+1,d);
+    const dateStr=dateObj.toISOString().slice(0,10);
+    calendarCells.push({dateStr,dayNum:d,inCurrentMonth:false,isToday:false});
+  }
+
+  const getEventStatus=(e:EventItem):'attended'|'upcoming'|'past'=>{
+    if(attendedEvents.includes(String(e.id)))return 'attended';
+    if(e.date<todayStr)return 'past';
+    return 'upcoming';
+  };
+
+  const selectedEvents=events.filter(e=>e.date===selectedDate);
+
+  const statusMeta={
+    attended:{label:'Attended',dotClass:'bg-emerald-500',badgeClass:'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'},
+    upcoming:{label:'Upcoming',dotClass:'bg-sky-500',badgeClass:'bg-sky-500/15 text-sky-400 border-sky-500/30'},
+    past:{label:'Past',dotClass:'bg-zinc-400',badgeClass:'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'}
+  };
+
+  return <>
+    <PageHead
+      eyebrow="Schedule"
+      title="Campus calendar."
+      copy="Monthly schedule of all campus events with verified attendance tracking."
+      action={<Button variant="outline" size="sm" onClick={goToday} className="rounded-xl">Today</Button>}
+    />
+
+    <div className="mb-6 flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-card p-4 text-xs">
+      <span className="font-semibold text-muted-foreground uppercase tracking-wider">Legend:</span>
+      <div className="flex items-center gap-2">
+        <span className="size-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"/>
+        <span><b>Green:</b> Attended Events</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="size-2.5 rounded-full bg-zinc-400"/>
+        <span><b>Grey:</b> Past Events</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="size-2.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]"/>
+        <span><b>Blue:</b> Upcoming Events</span>
+      </div>
+    </div>
+
+    <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+      <section className="panel p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-2xl font-bold">{monthName} {year}</h2>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={prevMonth} aria-label="Previous Month">
+              <ChevronLeft className="size-5"/>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={nextMonth} aria-label="Next Month">
+              <ChevronRight className="size-5"/>
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 border-b border-border pb-2 text-center text-xs font-semibold text-muted-foreground">
+          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(w=><span key={w}>{w}</span>)}
+        </div>
+
+        <div className="mt-2 grid grid-cols-7 gap-1.5">
+          {calendarCells.map((cell)=>{
+            const dayEvents=events.filter(e=>e.date===cell.dateStr);
+            const isSelected=cell.dateStr===selectedDate;
+            return <button
+              key={cell.dateStr}
+              type="button"
+              onClick={()=>setSelectedDate(cell.dateStr)}
+              className={cn(
+                "group relative flex min-h-[64px] flex-col items-center justify-between rounded-xl p-1.5 text-xs transition-all",
+                cell.inCurrentMonth?"text-foreground hover:bg-muted/70":"text-muted-foreground/35 hover:bg-muted/40",
+                cell.isToday&&"ring-2 ring-primary font-bold text-primary",
+                isSelected&&"bg-primary/10 border border-primary/50 shadow-sm font-semibold"
+              )}
+            >
+              <span className={cn(
+                "grid size-6 place-items-center rounded-full text-xs",
+                cell.isToday&&"bg-primary text-primary-foreground font-bold"
+              )}>
+                {cell.dayNum}
+              </span>
+
+              {dayEvents.length>0&&(
+                <div className="mt-1 flex flex-wrap justify-center gap-1">
+                  {dayEvents.slice(0,3).map(e=>{
+                    const st=getEventStatus(e);
+                    return <span
+                      key={e.id}
+                      className={cn("size-2 rounded-full",statusMeta[st].dotClass)}
+                      title={`${e.title} (${statusMeta[st].label})`}
+                    />
+                  })}
+                  {dayEvents.length>3&&(
+                    <span className="text-[9px] font-bold text-muted-foreground">+{dayEvents.length-3}</span>
+                  )}
+                </div>
+              )}
+            </button>
+          })}
+        </div>
+      </section>
+
+      <section className="panel h-fit space-y-4">
+        <div>
+          <p className="eyebrow">Selected date</p>
+          <h3 className="font-display text-xl font-bold">
+            {new Date(selectedDate+'T00:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',year:'numeric'})}
+          </h3>
+        </div>
+
+        {selectedEvents.length>0?(
+          <div className="space-y-3">
+            {selectedEvents.map(e=>{
+              const st=getEventStatus(e);
+              return <article key={e.id} className="rounded-xl border border-border bg-card p-3.5 transition-all hover:border-primary/40">
+                <div className="flex items-start justify-between gap-2">
+                  <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",statusMeta[st].badgeClass)}>
+                    <span className={cn("size-1.5 rounded-full",statusMeta[st].dotClass)}/>
+                    {statusMeta[st].label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{e.club}</span>
+                </div>
+                <h4 className="mt-2 font-display text-base font-bold">{e.title}</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {timeLabel(e.time)} · {e.venue || 'Campus venue'}
+                </p>
+                <Link href={`/e/${e.slug||e.id}`} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                  View event details <ChevronRight className="size-3.5"/>
+                </Link>
+              </article>
+            })}
+          </div>
+        ):(
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            <CalendarDays className="mx-auto mb-2 size-8 opacity-40"/>
+            No events scheduled for this date.
+          </div>
+        )}
+      </section>
+    </div>
+  </>
+}
 function LeaderboardPage(){const {leaderboard}=useCampStore();return <><PageHead title="Campus leaderboard" copy="Participation XP is earned when hosts check you in."/><section className="panel"><div className="grid grid-cols-[40px_1fr_80px] gap-3 py-3 text-xs text-muted-foreground"><span>Rank</span><span>Student</span><span>XP</span></div>{leaderboard.map((p,i)=><div key={p.id} className="grid grid-cols-[40px_1fr_80px] gap-3 py-4 border-t border-border"><b>{i+1}</b><div><b>{p.full_name}</b><p className="text-xs text-muted-foreground">{p.department} · {p.attended} events</p></div><b>{p.xp}</b></div>)}</section></>}
 function XPPage(){const {studentStats,events,registrations}=useCampStore();return <><PageHead title={`${studentStats.xp} participation XP`} copy="Hosts confirm attendance by checking your ticket in. XP reflects confirmed attendance."/><div className="panel"><b>{studentStats.attended} events attended</b><h2 className="mt-6 text-xl font-semibold">Your registrations</h2><div className="mt-4 grid gap-4 sm:grid-cols-2">{events.filter(e=>registrations.includes(String(e.id))).map(e=><EventCard key={e.id} event={e}/>)}</div></div></>}
 
 function ChatLine({message}:{message:{name:string;initials:string;time:string;text:string;tone:string;admin?:boolean}}){return <div className="flex gap-3"><span className={cn("avatar",tones[message.tone]||"tone-mint")}>{message.initials}</span><div className="min-w-0"><p className="text-sm"><b>{message.name}</b>{message.admin&&<span className="tag tone-mint ml-2">Admin</span>}<span className="ml-2 text-xs text-muted-foreground">{message.time}</span></p><p className="mt-1 text-sm leading-6 text-secondary-foreground">{message.text}</p></div></div>}
 function ChatPage({admin=false}:{admin?:boolean}){const {messages,addMessage,auth,admins}=useCampStore();const [channel,setChannel]=useState("general");const [text,setText]=useState("");const adminData=admins.find(a=>a.id===auth?.adminId);const canPost=!admin||channel==="general"||channel===(adminData?.club||"").toLowerCase().replaceAll(" ","-").replace("&","").replaceAll("--","-");const channels=["general","cesa-csi","mesa","ecsa","itsa","aiml","students-council"];const shown=messages.filter(m=>m.channel===channel);return <><PageHead eyebrow="Community" title="Backstage chat." copy={admin?"Connect with the campus community. Admins can post in general and their own club channel.":"The conversation behind campus life."}/><section className="grid min-h-[620px] overflow-hidden rounded-2xl border border-border bg-card lg:grid-cols-[220px_1fr_200px]"><aside className="hidden border-r border-border p-4 lg:block"><p className="eyebrow">Channels</p>{channels.map(c=><Button key={c} type="button" variant="ghost" onClick={()=>setChannel(c)} className={cn("my-1 flex w-full justify-start rounded-lg px-3 py-2 text-left text-sm",channel===c?"bg-primary/10 font-semibold text-primary":"text-muted-foreground hover:bg-muted")}># {c}</Button>)}</aside><div className="flex min-w-0 flex-col"><div className="flex items-center justify-between border-b border-border p-4"><div><b># {channel}</b><p className="text-xs text-muted-foreground">Campus-wide conversation</p></div><span className="tag tone-mint">128 online</span></div><div className="flex gap-2 overflow-x-auto border-b border-border p-2 lg:hidden">{channels.map(c=><Button key={c} size="sm" variant={channel===c?"default":"secondary"} onClick={()=>setChannel(c)}>#{c}</Button>)}</div><div className="flex-1 space-y-6 overflow-y-auto p-5">{shown.length?shown.map(m=><ChatLine key={m.id} message={m}/>):<div className="py-12 text-center text-sm text-muted-foreground">No messages in this channel yet. Start the conversation.</div>}</div><form onSubmit={e=>{e.preventDefault();if(canPost&&text.trim()){addMessage(channel,text.trim());setText("");}}} className="flex gap-2 border-t border-border bg-card p-3"><Input value={text} onChange={e=>setText(e.target.value)} placeholder={canPost?`Message #${channel}`:"Posting is limited to general and your club channel"} disabled={!canPost} aria-label="Write message" className="h-11 rounded-xl bg-background"/><Button disabled={!canPost||!text.trim()} size="icon" className="size-11 shrink-0 rounded-xl" aria-label="Send message"><Send/></Button></form></div><aside className="hidden border-l border-border p-4 lg:block"><p className="eyebrow">Online now</p>{["Meera Shah","Kabir Menon","Ishita Rao","Naina Bose"].map((n,i)=><div className="mt-4 flex items-center gap-3" key={n}><span className="relative"><Avatar name={n} size="sm"/><i className="absolute bottom-0 right-0 size-2 rounded-full bg-primary ring-2 ring-card"/></span><span className="text-sm font-medium">{n}</span></div>)}</aside></section></>}
 function GalleryPage({admin=false}:{admin?:boolean}){const {albums,saveAlbum,deleteAlbum,setCover,auth,admins}=useCampStore();const [filter,setFilter]=useState("All");const [uploading,setUploading]=useState(false);const [editing,setEditing]=useState<PhotoAlbum|null>(null);const [selected,setSelected]=useState<string[]>([]);const [message,setMessage]=useState("");const adminData=admins.find(a=>a.id===auth?.adminId);const visible=albums.filter(a=>filter==="All"||a.club===filter);const selectFiles=async(e:ChangeEvent<HTMLInputElement>)=>{try{const urls=await Promise.all(Array.from(e.target.files||[]).map(uploadImage));setSelected(urls);}catch(e){setMessage((e as Error).message);}};
- useEffect(()=>{if(!admin&&selected.length){saveAlbum({id:-1,title:"Your campus moment",date:new Date().toISOString().slice(0,10),description:"Shared by a student.",club:"Student upload",posted_by:auth?.name||"Riya Sharma",cover:selected[0],photos:selected}).then(()=>{setMessage("Photo uploaded.");setSelected([]);}).catch(e=>setMessage(e.message));}},[admin,selected]);
+ useEffect(()=>{if(!admin&&selected.length){saveAlbum({id:-1,title:"Your campus moment",date:new Date().toISOString().slice(0,10),description:"Shared by a student.",club:"Student upload",posted_by:auth?.name||"Riya Sharma",cover:selected[0],photos:selected}).then(()=>{setMessage("Photo submitted for admin approval.");toast.success("Photo submitted for admin approval.");setSelected([]);}).catch(e=>setMessage(e.message));}},[admin,selected]);
  const openUpload=()=>{setEditing(null);setSelected([]);setUploading(true);};
  const submit=async (e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const fd=new FormData(e.currentTarget);if(!selected.length){setMessage("Choose at least one image.");return;}const id=editing?.id??-1;try{await saveAlbum({id,title:String(fd.get("title")),event:String(fd.get("event")||""),date:String(fd.get("date")),description:String(fd.get("description")),club:adminData?.club||"Student upload",posted_by:adminData?.name||auth?.name||"Riya Sharma",owner:adminData?.id,cover:editing?.cover||selected[0],photos:selected});setUploading(false);setEditing(null);setMessage("Album saved.");}catch(e){setMessage((e as Error).message);}};
  return <><PageHead eyebrow="Campus, captured" title="Photo gallery." copy="Moments submitted by students and curated by club teams." action={admin?<Button onClick={openUpload} className="rounded-xl"><Upload/>Upload Photos</Button>:<label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground"><Upload/>Upload photo<input type="file" accept="image/*" className="sr-only" onChange={selectFiles}/></label>}/>{message&&<p className="mb-4 text-sm text-primary" role="status">{message}</p>}<div className="mb-5 flex gap-2 overflow-x-auto pb-1"><Button size="sm" variant={filter==="All"?"default":"secondary"} onClick={()=>setFilter("All")} className="rounded-xl">All</Button>{clubNames.map(c=><Button key={c} size="sm" variant={filter===c?"default":"secondary"} onClick={()=>setFilter(c)} className="rounded-xl">{c}</Button>)}</div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{visible.map((album,i)=>{const own=admin&&album.owner===adminData?.id;return <article key={album.id} className={cn("group relative overflow-hidden rounded-2xl border border-border",i===0&&"sm:col-span-2")}><img src={album.cover} alt={`${album.title} gallery`} loading="lazy" className={cn("h-72 w-full object-cover",i===0&&"sm:h-96")}/><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/80 to-transparent p-5 pt-16"><div className="flex items-center justify-between gap-3"><b className="font-display text-lg">{album.title}</b>{album.photos.length>1&&<span className="tag tone-mint">{album.photos.length} photos</span>}</div>{album.event&&<p className="text-xs text-muted-foreground">{album.event} · {album.date}</p>}<p className="mt-1 text-xs text-muted-foreground">{album.description}</p><p className="mt-2 text-xs text-muted-foreground">Posted by <b className="text-foreground">{album.posted_by}</b> · {album.club}</p>{own&&<div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={()=>{setEditing(album);setSelected(album.photos);setUploading(true);}}><Pencil className="size-3"/>Edit</Button><Button size="sm" variant="secondary" onClick={()=>{const next=album.photos[(album.photos.indexOf(album.cover)+1)%album.photos.length];setCover(album.id,next).catch(()=>{});}}><Star className="size-3"/>Set cover</Button><Button size="sm" variant="destructive" onClick={()=>{if(window.confirm("Delete this album?"))deleteAlbum(album.id).catch(()=>{});}}><Trash2 className="size-3"/>Delete</Button></div>}</div><div className="absolute right-3 top-3 tag tone-mint">{album.club}</div></article>})}</div>
  <Dialog open={uploading} onOpenChange={setUploading}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl border-border bg-card sm:max-w-xl"><DialogTitle className="font-display text-2xl">{editing?"Edit album":"Upload photos"}</DialogTitle><DialogDescription>Share a campus moment with the community.</DialogDescription><form onSubmit={submit} className="mt-4 space-y-4"><label className="block text-sm font-semibold">Album title<Input name="title" required defaultValue={editing?.title} className="mt-1 bg-background"/></label><label className="block text-sm font-semibold">Event name (optional)<Input name="event" defaultValue={editing?.event} className="mt-1 bg-background"/></label><label className="block text-sm font-semibold">Date<Input type="date" name="date" required defaultValue={editing?.date} className="mt-1 bg-background"/></label><label className="block text-sm font-semibold">Description<Textarea name="description" defaultValue={editing?.description} className="mt-1 bg-background"/></label>{admin&&<p className="text-sm text-muted-foreground">Club: <b className="text-foreground">{adminData?.club}</b> (assigned automatically)</p>}<label className="block cursor-pointer rounded-xl border border-dashed border-primary/50 p-4 text-sm text-primary"><Upload className="mr-2 inline size-4"/>Choose multiple images<input type="file" multiple accept="image/*" onChange={selectFiles} className="sr-only"/></label>{selected.length>0&&<div className="grid grid-cols-3 gap-2">{selected.map((src,i)=><div className="relative" key={`${i}-${src.slice(0,15)}`}><img src={src} alt={`Selected photo ${i+1}`} className="h-24 w-full rounded-lg object-cover"/><button type="button" onClick={()=>setSelected(v=>v.filter((_,n)=>n!==i))} aria-label={`Remove image ${i+1}`} className="absolute right-1 top-1 rounded-full bg-background p-1"><X className="size-3"/></button></div>)}</div>}<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={()=>setUploading(false)}>Cancel</Button><Button type="submit">{editing?"Save changes":"Publish album"}</Button></div></form></DialogContent></Dialog>
  </>}
 function NotificationsPage(){const {notices,followed,readNotices:read,markNoticesRead}=useCampStore();const visible=notices.filter(n=>!n.club||n.audience==="All students"||!n.audience||followed.includes(n.club));return <><PageHead eyebrow="Inbox" title="Notifications." copy="Event updates, club announcements and conversations that need you." action={<Button variant="secondary" onClick={()=>markNoticesRead()} className="rounded-xl"><Check/>Mark all read</Button>}/><section className="overflow-hidden rounded-2xl border border-border bg-card">{visible.length?visible.map(n=>{const unread=n.unread&&!read.includes(n.id);return <button key={n.id} onClick={()=>markNoticesRead(n.id)} className={cn("flex w-full items-start gap-4 border-b border-border p-5 text-left last:border-0 hover:bg-muted/60",unread&&"bg-primary/5")}><span className={cn("mt-1 grid size-10 shrink-0 place-items-center rounded-xl border",tones[n.tone]||"tone-mint")}><Bell className="size-4"/></span><span className="flex-1"><b className="text-sm">{n.title}</b><p className="mt-1 text-sm text-muted-foreground">{n.body}</p><small className="mt-2 block text-muted-foreground">{n.time}{n.sender?` · ${n.sender}`:""}</small></span>{unread&&<span className="mt-2 size-2 rounded-full bg-primary"/>}</button>}):<div className="p-8 text-center text-sm text-muted-foreground">No notifications for your followed clubs yet.</div>}</section></>}
-function ProfilePage(){const {auth,profile,studentStats,followed,updateProfile,logout}=useCampStore();const [editing,setEditing]=useState(false);const [name,setName]=useState(auth?.name||"");const [,setLocation]=useLocation();const [saving,setSaving]=useState(false);return <><PageHead title="Your profile" copy="Your account and campus participation."/><section className="panel max-w-2xl"><div className="flex gap-4 items-center"><Avatar name={auth?.name||""} size="lg"/><div><h2 className="text-2xl font-bold">{auth?.name}</h2><p className="text-muted-foreground">{auth?.email}</p></div></div><p className="mt-4 text-muted-foreground">{profile?.department} · {profile?.year_or_designation}</p>{editing?<form className="mt-5 flex gap-2" onSubmit={async e=>{e.preventDefault();setSaving(true);try{await updateProfile({fullName:name});setEditing(false);toast.success("Profile saved.");}catch{}finally{setSaving(false);}}}><Input aria-label="Full name" minLength={2} value={name} onChange={e=>setName(e.target.value)} required/><Button disabled={saving}>{saving?"Saving…":"Save profile"}</Button></form>:<Button variant="secondary" className="mt-5" onClick={()=>setEditing(true)}>Edit profile</Button>}<div className="mt-8 grid grid-cols-2 gap-3"><div className="stat"><b>{studentStats.attended}</b><small>Events attended</small></div><div className="stat"><b>{studentStats.xp}</b><small>Participation XP</small></div></div><h3 className="mt-7 font-semibold">Following</h3><p className="mt-2 text-muted-foreground">{followed.length?followed.join(", "):"Follow a calendar to hear about its events."}</p><Button variant="outline" className="mt-6" onClick={()=>{logout();setLocation("/");}}><LogOut/>Log out</Button></section></>}
+function ProfilePage(){
+  const {auth,profile,studentStats,followed,updateProfile,logout}=useCampStore();
+  const [editing,setEditing]=useState(false);
+  const [name,setName]=useState(auth?.name||"");
+  const [department,setDepartment]=useState(profile?.department||"");
+  const [,setLocation]=useLocation();
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    if(auth?.name)setName(auth.name);
+    if(profile?.department)setDepartment(profile.department);
+  },[auth?.name,profile?.department]);
+
+  return <>
+    <PageHead title="Your profile" copy="Your account, academic department, and campus participation."/>
+    <section className="panel max-w-2xl">
+      <div className="flex gap-4 items-center">
+        <Avatar name={auth?.name||""} size="lg"/>
+        <div>
+          <h2 className="text-2xl font-bold">{auth?.name}</h2>
+          <p className="text-muted-foreground">{auth?.email}</p>
+        </div>
+      </div>
+      <div className="mt-4 rounded-xl border border-border bg-card/60 p-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Department</span>
+        <p className="mt-1 font-medium text-foreground">
+          {profile?.department || <span className="text-muted-foreground italic">No department set. Click Edit profile below to choose your department.</span>}
+        </p>
+        {profile?.year_or_designation&&<p className="mt-1 text-xs text-muted-foreground">{profile.year_or_designation}</p>}
+      </div>
+
+      {editing ? (
+        <form className="mt-5 space-y-4 rounded-xl border border-border bg-card p-4" onSubmit={async e=>{
+          e.preventDefault();
+          setSaving(true);
+          try{
+            await updateProfile({fullName:name,department:department});
+            setEditing(false);
+            toast.success("Profile saved.");
+          }catch{}finally{setSaving(false);}
+        }}>
+          <h3 className="font-display font-bold">Edit profile details</h3>
+          <label className="block text-sm font-semibold">
+            Full name
+            <Input aria-label="Full name" minLength={2} value={name} onChange={e=>setName(e.target.value)} required className="mt-1"/>
+          </label>
+          <label className="block text-sm font-semibold">
+            Department
+            <select
+              aria-label="Department"
+              value={department}
+              onChange={e=>setDepartment(e.target.value)}
+              className="filter mt-1 w-full"
+              required
+            >
+              <option value="" disabled>Select your department</option>
+              {collegeDepartments.map(d=><option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+          <div className="flex gap-2">
+            <Button disabled={saving}>{saving?"Saving…":"Save profile"}</Button>
+            <Button type="button" variant="secondary" onClick={()=>setEditing(false)}>Cancel</Button>
+          </div>
+        </form>
+      ) : (
+        <Button variant="secondary" className="mt-5" onClick={()=>setEditing(true)}>Edit profile</Button>
+      )}
+
+      <div className="mt-8 grid grid-cols-2 gap-3">
+        <div className="stat"><b>{studentStats.attended}</b><small>Events attended</small></div>
+        <div className="stat"><b>{studentStats.xp}</b><small>Participation XP</small></div>
+      </div>
+      <h3 className="mt-7 font-semibold">Following</h3>
+      <p className="mt-2 text-muted-foreground">{followed.length?followed.join(", "):"Follow a calendar to hear about its events."}</p>
+      <Button variant="outline" className="mt-6" onClick={()=>{logout();setLocation("/");}}><LogOut/>Log out</Button>
+    </section>
+  </>
+}
 function SportsPage(){const {events}=useCampStore();const sports=events.filter(e=>e.category==="Sports");const [teams,setTeams]=useState<any[]>([]),[message,setMessage]=useState("");useEffect(()=>{api.get<any>("/sports/teams").then(d=>setTeams(d.teams)).catch(e=>setMessage(e.message));},[]);return <><PageHead title="Sports" copy="Join a sports event or submit your team roster."/><div className="grid gap-5 md:grid-cols-2"><section className="space-y-5">{sports.map(e=><EventCard key={e.id} event={e}/>)}{!sports.length&&<p>No sports events are scheduled yet.</p>}</section><section className="panel h-fit"><h2 className="text-xl font-semibold">Register your team</h2>{message&&<p role="status" className="mt-3">{message}</p>}<form className="mt-5 space-y-4" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api.post("/sports/teams",{eventId:f.get("event"),name:f.get("name"),players:String(f.get("players")).split(",").map(n=>n.trim()).filter(Boolean)});const d=await api.get<any>("/sports/teams");setTeams(d.teams);setMessage("Team roster saved.");}catch(e){setMessage((e as Error).message);}}}><label className="block">Sports event<select name="event" className="filter mt-2 w-full" required>{sports.map(e=><option key={e.id} value={e.id}>{e.title}</option>)}</select></label><label className="block">Team name<Input name="name" minLength={2} required/></label><label className="block">Player names (comma separated, up to 8)<Textarea name="players" required/></label><Button disabled={!sports.length}>Save team roster</Button></form>{teams.map(t=><div className="mt-5 stat" key={t.id}><b>{t.name}</b><p className="text-sm text-muted-foreground">{t.players.join(", ")}</p></div>)}</section></div></>}
 
-function AdminDashboard(){const {auth,admins,events,albums,notices,activity,profile}=useCampStore();const a=admins.find(x=>x.id===auth?.adminId)!;const ownEvents=events.filter(e=>profile?.role==="super_admin"||e.calendar_id===a.calendar_id);const photos=albums.filter(x=>x.owner===a.id||(!x.owner&&x.club===a.club)).reduce((n,x)=>n+x.photos.length,0);const today=new Date();today.setHours(0,0,0,0);const upcoming=ownEvents.filter(e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date)&&new Date(`${e.date}T00:00:00`)>=today).sort((x,y)=>x.date.localeCompare(y.date)).slice(0,3);const registrations=ownEvents.reduce((n,e)=>n+e.attendees,0);const sent=notices.filter(n=>n.owner===a.id||(!n.owner&&n.club===a.club)).length;const stats=[[ownEvents.length,"Events posted",CalendarDays,"mint"],[photos,"Photos uploaded",Camera,"purple"],[registrations,"Total registrations",UsersRound,"amber"],[sent,"Notifications sent",Bell,"coral"]] as const;return <><PageHead eyebrow={`Club workspace · ${a.club}`} title={`Good evening, ${a.name.split(" ")[0]}.`} copy="Here’s what’s happening with your club." action={<span className="tag tone-mint text-sm">{a.club}</span>}/><div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]"><section className="pass-card"><div className="relative z-10"><div className="flex items-start justify-between"><div><p className="eyebrow">Club Admin</p><h2 className="font-display text-3xl font-bold">{a.name}</h2><p className="mt-1 text-sm text-muted-foreground">{a.designation} · {a.department}</p></div><Avatar name={a.name} size="lg"/></div><div className="mt-8 flex flex-wrap gap-2"><span className="tag tone-mint">{a.club}</span><span className="tag tone-purple">Official club workspace</span></div></div></section><section className="panel"><SectionHead title="Club pulse"/><div className="grid grid-cols-2 gap-3">{stats.map(([value,label,Icon,tone])=><div className="stat" key={label}><Icon className={cn("size-4",`text-[hsl(var(--${tone}))]`)}/><b className="mt-3 block text-xl">{value}</b><small>{label}</small></div>)}</div></section></div><div className="mt-8 grid gap-5 xl:grid-cols-[1.2fr_.8fr]"><section><SectionHead title="Upcoming events by my club" link="Manage events" to="/admin/events"/>{upcoming.length?<div className="grid gap-4 md:grid-cols-2">{upcoming.map(e=><EventCard key={e.id} event={e} admin/>)}</div>:<div className="panel text-center"><CalendarDays className="mx-auto text-muted-foreground"/><p className="mt-2">{ownEvents.length?"No upcoming events. Create one or check the full event list.":"No club events yet. Add your first event."}</p></div>}</section><div className="space-y-5"><section className="panel"><SectionHead title="Quick actions"/><div className="grid gap-2"><Link href="/admin/events" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Plus className="text-primary"/>Add Event<ArrowRight className="ml-auto size-4"/></Link><Link href="/admin/gallery" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Upload className="text-primary"/>Upload Photos<ArrowRight className="ml-auto size-4"/></Link><Link href="/admin/notifications" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Send className="text-primary"/>Send Notification<ArrowRight className="ml-auto size-4"/></Link></div></section><section className="panel"><SectionHead title="Recent activity"/><div className="space-y-3">{activity.slice(0,5).map((line,i)=><p key={`${line}-${i}`} className="flex gap-3 text-sm"><span className="mt-1 size-2 shrink-0 rounded-full bg-primary"/><span>{line}</span></p>)}</div></section></div></div></>}
+function AdminDashboard(){const {auth,admins,events,albums,notices,activity,profile,pendingPhotos,approvePhoto,rejectPhoto}=useCampStore();const a=admins.find(x=>x.id===auth?.adminId)!;const ownEvents=events.filter(e=>profile?.role==="super_admin"||e.calendar_id===a.calendar_id);const photos=albums.filter(x=>x.owner===a.id||(!x.owner&&x.club===a.club)).reduce((n,x)=>n+x.photos.length,0);const today=new Date();today.setHours(0,0,0,0);const upcoming=ownEvents.filter(e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date)&&new Date(`${e.date}T00:00:00`)>=today).sort((x,y)=>x.date.localeCompare(y.date)).slice(0,3);const registrations=ownEvents.reduce((n,e)=>n+e.attendees,0);const sent=notices.filter(n=>n.owner===a.id||(!n.owner&&n.club===a.club)).length;const stats=[[ownEvents.length,"Events posted",CalendarDays,"mint"],[photos,"Photos uploaded",Camera,"purple"],[registrations,"Total registrations",UsersRound,"amber"],[sent,"Notifications sent",Bell,"coral"]] as const;return <><PageHead eyebrow={`Club workspace · ${a.club}`} title={`Good evening, ${a.name.split(" ")[0]}.`} copy="Here’s what’s happening with your club." action={<span className="tag tone-mint text-sm">{a.club}</span>}/><div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]"><section className="pass-card"><div className="relative z-10"><div className="flex items-start justify-between"><div><p className="eyebrow">Club Admin</p><h2 className="font-display text-3xl font-bold">{a.name}</h2><p className="mt-1 text-sm text-muted-foreground">{a.designation} · {a.department}</p></div><Avatar name={a.name} size="lg"/></div><div className="mt-8 flex flex-wrap gap-2"><span className="tag tone-mint">{a.club}</span><span className="tag tone-purple">Official club workspace</span></div></div></section><section className="panel"><SectionHead title="Club pulse"/><div className="grid grid-cols-2 gap-3">{stats.map(([value,label,Icon,tone])=><div className="stat" key={label}><Icon className={cn("size-4",`text-[hsl(var(--${tone}))]`)}/><b className="mt-3 block text-xl">{value}</b><small>{label}</small></div>)}</div></section></div><div className="mt-8 grid gap-5 xl:grid-cols-[1.2fr_.8fr]"><section><SectionHead title="Upcoming events by my club" link="Manage events" to="/admin/events"/>{upcoming.length?<div className="grid gap-4 md:grid-cols-2">{upcoming.map(e=><EventCard key={e.id} event={e} admin/>)}</div>:<div className="panel text-center"><CalendarDays className="mx-auto text-muted-foreground"/><p className="mt-2">{ownEvents.length?"No upcoming events. Create one or check the full event list.":"No club events yet. Add your first event."}</p></div>}</section><div className="space-y-5"><section className="panel"><SectionHead title="Quick actions"/><div className="grid gap-2"><Link href="/admin/events" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Plus className="text-primary"/>Add Event<ArrowRight className="ml-auto size-4"/></Link><Link href="/admin/gallery" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Upload className="text-primary"/>Upload Photos<ArrowRight className="ml-auto size-4"/></Link><Link href="/admin/notifications" className="flex items-center gap-3 rounded-xl bg-muted p-3 text-sm font-semibold"><Send className="text-primary"/>Send Notification<ArrowRight className="ml-auto size-4"/></Link></div></section><section className="panel"><SectionHead title="Recent activity"/><div className="space-y-3">{activity.slice(0,5).map((line,i)=><p key={`${line}-${i}`} className="flex gap-3 text-sm"><span className="mt-1 size-2 shrink-0 rounded-full bg-primary"/><span>{line}</span></p>)}</div></section></div></div>
+      <section className="panel mt-8">
+        <SectionHead title="Pending Photo Approvals" />
+        {pendingPhotos.length ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pendingPhotos.map((photo) => (
+              <article key={photo.id} className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4">
+                <img
+                  src={photo.cover_url || (photo.photos && photo.photos[0]?.photo_url) || photo.photos?.[0]}
+                  alt={photo.title}
+                  className="aspect-video w-full rounded-xl object-cover"
+                />
+                <div className="mt-3">
+                  <b className="font-display text-base">{photo.title}</b>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Uploaded by <b className="text-foreground">{photo.uploader_name || photo.posted_by}</b> · {photo.club_name || photo.club || "Student upload"}
+                  </p>
+                  {photo.uploader_department && (
+                    <p className="text-xs text-muted-foreground">{photo.uploader_department}</p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">{photo.date}</p>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 rounded-xl"
+                    onClick={async () => {
+                      try {
+                        await approvePhoto(photo.id);
+                        toast.success("Photo approved and added to gallery.");
+                      } catch (err: any) {
+                        toast.error(err.message || "Failed to approve.");
+                      }
+                    }}
+                  >
+                    <Check className="size-3 mr-1" /> Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1 rounded-xl"
+                    onClick={async () => {
+                      try {
+                        await rejectPhoto(photo.id);
+                        toast.success("Photo rejected.");
+                      } catch (err: any) {
+                        toast.error(err.message || "Failed to reject.");
+                      }
+                    }}
+                  >
+                    <X className="size-3 mr-1" /> Reject
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No photographs waiting for review.
+          </div>
+        )}
+      </section>
+</>}
 function EventManager(){return <EventManagerPage/>}
 function AdminNotifications(){const {auth,admins,notices,sendNotice}=useCampStore();const a=admins.find(x=>x.id===auth?.adminId)!;const [sent,setSent]=useState("");const submit=async (e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);try{await sendNotice(String(f.get("title")),String(f.get("message")),String(f.get("audience")));form.reset();setSent("Notification sent to students.");}catch(e){setSent((e as Error).message);}};const own=notices.filter(n=>n.owner===a.id||(!n.owner&&n.club===a.club));return <><PageHead eyebrow="Club workspace" title="Notifications." copy="Send a timely note to students and keep your community in the loop."/><div className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]"><section className="panel h-fit"><SectionHead title="Send notification"/>{sent&&<p role="status" className="mb-4 rounded-xl bg-primary/10 p-3 text-sm text-primary">{sent}</p>}<form onSubmit={submit} className="space-y-4"><label className="block text-sm font-semibold">Title<Input name="title" required maxLength={80} className="mt-1 bg-background" placeholder="Event update"/></label><label className="block text-sm font-semibold">Message<Textarea name="message" required maxLength={500} rows={5} className="mt-1 bg-background" placeholder="What should students know?"/></label><label className="block text-sm font-semibold">Audience<select name="audience" className="filter mt-1 w-full"><option value="All students">All students</option><option value={`Followers of ${a.club}`}>Followers of my club ({a.club})</option></select></label><Button className="w-full rounded-xl"><Send/>Send notification</Button></form></section><section className="panel"><SectionHead title="Sent notifications"/>{own.length?own.map(n=><article key={n.id} className="border-b border-border py-4 last:border-0"><div className="flex items-start justify-between gap-3"><b>{n.title}</b><span className="tag tone-mint">{n.time}</span></div><p className="mt-1 text-sm leading-6 text-muted-foreground">{n.body}</p><p className="mt-2 text-xs font-semibold text-primary">{n.audience}</p></article>):<div className="py-10 text-center"><Bell className="mx-auto text-muted-foreground"/><p className="mt-2 text-sm text-muted-foreground">Your sent notifications will appear here.</p></div>}</section></div></>}
 function AdminProfile(){const {auth,admins,events,albums,notices,activity,profile,logout,updateAdmin,changePassword}=useCampStore();const a=admins.find(x=>x.id===auth?.adminId)!;const [edit,setEdit]=useState(false);const [name,setName]=useState(a.name);const [department,setDepartment]=useState(a.department);const [avatar,setAvatar]=useState(a.avatar||"");const [pwMessage,setPwMessage]=useState("");const [profileMessage,setProfileMessage]=useState("");const [,setLocation]=useLocation();const owned=events.filter(e=>profile?.role==="super_admin"||e.calendar_id===a.calendar_id);const photos=albums.filter(x=>x.owner===a.id||(!x.owner&&x.club===a.club)).reduce((n,x)=>n+x.photos.length,0);const notificationCount=notices.filter(n=>n.owner===a.id||(!n.owner&&n.club===a.club)).length;const registrationCount=owned.reduce((n,e)=>n+e.attendees,0);const saveProfile=async()=>{try{await updateAdmin(a.id,{name,department,avatar});setEdit(false);setProfileMessage("Profile updated.");}catch(e){setProfileMessage((e as Error).message);}};const readAvatar=(e:ChangeEvent<HTMLInputElement>)=>{const file=e.target.files?.[0];if(file){uploadImage(file).then(setAvatar).catch(e=>setProfileMessage(e.message));}};const passSubmit=async (e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const next=String(f.get("next"));if(next!==String(f.get("confirm"))){setPwMessage("New passwords do not match.");return;}const result=await changePassword(a.id,String(f.get("current")),next);setPwMessage(result);if(result==="Password updated.")form.reset();};return <><PageHead eyebrow="Club identity" title="Admin profile." copy="Your account, your club and your workspace preferences."/><div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]"><section className="pass-card"><div className="relative z-10"><div className="flex flex-col gap-5 sm:flex-row sm:items-center">{avatar?<img src={avatar} alt={`${a.name} profile`} className="size-16 rounded-2xl object-cover"/>:<Avatar name={a.name} size="lg"/>}<div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-3xl">{a.name}</h2><span className="tag tone-mint">Club Admin</span></div><p className="mt-2 text-muted-foreground">{a.email}</p></div><Button variant="secondary" onClick={()=>setEdit(v=>!v)}><Pencil/>{edit?"Cancel":"Edit profile"}</Button></div><div className="mt-8 grid gap-3 sm:grid-cols-2"><div className="stat"><small>Managed club · locked</small><b className="mt-1 block">{a.club}</b></div><div className="stat"><small>Department</small><b className="mt-1 block">{a.department}</b></div><div className="stat"><small>Designation</small><b className="mt-1 block">{a.designation}</b></div><div className="stat"><small>Email</small><b className="mt-1 block break-all">{a.email}</b></div></div>{edit&&<div className="mt-5 rounded-xl border border-border bg-card p-4"><h3 className="font-display font-bold">Edit allowed details</h3><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-semibold">Name<Input value={name} onChange={e=>setName(e.target.value)} className="mt-1"/></label><label className="text-sm font-semibold">Department<Input value={department} onChange={e=>setDepartment(e.target.value)} className="mt-1"/></label><label className="cursor-pointer text-sm font-semibold sm:col-span-2">Profile photo<input type="file" accept="image/*" onChange={readAvatar} className="mt-2 block w-full text-xs"/></label></div><Button onClick={saveProfile} className="mt-4">Save profile</Button></div>}{profileMessage&&<p role="status" className="mt-3 text-sm text-primary">{profileMessage}</p>}</div></section><div className="space-y-5"><section className="panel"><SectionHead title="Owned activity"/><div className="grid grid-cols-2 gap-3">{[[owned.length,"Events posted"],[photos,"Photos uploaded"],[notificationCount,"Notifications sent"],[registrationCount,"Total registrations"]].map(([n,l])=><div key={String(l)} className="stat"><b className="text-xl">{n}</b><small>{l}</small></div>)}</div></section><section className="panel"><SectionHead title="Change password"/>{pwMessage&&<p role="status" className="mb-3 text-sm text-primary">{pwMessage}</p>}<form onSubmit={passSubmit} className="space-y-3"><label className="block text-sm font-semibold">Current password<Input type="password" name="current" required className="mt-1"/></label><label className="block text-sm font-semibold">New password (8+ characters)<Input type="password" name="next" minLength={8} required className="mt-1"/></label><label className="block text-sm font-semibold">Confirm new password<Input type="password" name="confirm" minLength={8} required className="mt-1"/></label><Button className="w-full">Update password</Button></form></section><section className="panel"><SectionHead title="Recent activity"/>{activity.slice(0,4).map((x,i)=><p key={`${x}-${i}`} className="border-b border-border py-2 text-sm last:border-0">{x}</p>)}</section><section className="panel"><Button variant="outline" className="mt-3 w-full" onClick={()=>{logout();setLocation("/");}}><LogOut/>Log out</Button></section></div></div></>}
@@ -94,6 +452,7 @@ export function CampApp(){return <Switch>
  <Route path="/dashboard" component={()=> <StudentFrame><StudentDashboard/></StudentFrame>}/>
  <Route path="/events" component={()=> <StudentFrame><EventsPage/></StudentFrame>}/>
  <Route path="/clubs" component={()=> <StudentFrame><ClubsPage/></StudentFrame>}/>
+ <Route path="/calendar" component={()=> <StudentFrame><CalendarPage/></StudentFrame>}/>
  <Route path="/leaderboard" component={()=> <StudentFrame><LeaderboardPage/></StudentFrame>}/>
  <Route path="/chat" component={()=> <StudentFrame><ChatPage/></StudentFrame>}/>
  <Route path="/gallery" component={()=> <StudentFrame><GalleryPage/></StudentFrame>}/>

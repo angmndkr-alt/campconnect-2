@@ -56,6 +56,7 @@ export type EventInput = {
   requiresApproval?: boolean;
   waitlistEnabled?: boolean;
   isPublished?: boolean;
+  isCanceled?: boolean;
 };
 
 const slugTaken = async (candidate: string, ignoreId?: string): Promise<boolean> => {
@@ -218,11 +219,14 @@ export async function createEvent(ownerId: string, input: EventInput): Promise<E
   if (!row) throw new Error('Failed to create event.');
 
   // Every event needs at least one ticket type, mirroring Luma.
-  await client.query(
-    `INSERT INTO ticket_types (event_id, name, requires_approval, capacity)
-     VALUES ($1, 'Standard', $2, $3)`,
-    [row.id, input.requiresApproval ?? false, null],
-  );
+  if (!input.tickets || input.tickets.length === 0) {
+    await client.query(
+      `INSERT INTO ticket_types (event_id, name, requires_approval, capacity)
+       VALUES ($1, 'Standard', $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [row.id, input.requiresApproval ?? false, null],
+    );
+  }
 
   if(input.tickets!==undefined||input.questions!==undefined)await saveConfiguration(client,row.id,{tickets:input.tickets,questions:input.questions});
   await client.query('INSERT INTO activity_log(user_id,calendar_id,action,details) VALUES($1,$2,$3,$4)',[ownerId,input.calendarId,'event_created',row.title]);
@@ -263,7 +267,8 @@ export async function updateEvent(
             max_capacity      = CASE WHEN $21::boolean THEN $17 ELSE max_capacity END,
             requires_approval = COALESCE($18, requires_approval),
             waitlist_enabled  = COALESCE($19, waitlist_enabled),
-            is_published      = COALESCE($20, is_published)
+            is_published      = COALESCE($20, is_published),
+            is_canceled       = COALESCE($22, is_canceled)
       WHERE id = $1
       RETURNING ${PUBLIC_EVENT_COLUMNS}`,
     [
@@ -288,6 +293,7 @@ export async function updateEvent(
       patch.waitlistEnabled ?? null,
       patch.isPublished ?? null,
       patch.maxCapacity!==undefined,
+      patch.isCanceled ?? null,
     ],
   )).rows[0];
 
@@ -330,10 +336,26 @@ export type RegistrationConfig={tickets?:Array<{id:string;name:string;price:numb
 export async function saveConfiguration(client:PoolClient,id:string,body:RegistrationConfig){
 
   if(body.tickets!==undefined){
-  const old=(await client.query('SELECT id FROM ticket_types WHERE event_id=$1',[id])).rows;
-  for(const [sortOrder,t] of body.tickets.entries()){if(old.some(o=>o.id===t.id))await client.query(`UPDATE ticket_types SET name=$2,requires_approval=$3,is_hidden=false,sort_order=$4,payment_type='free',price_cents=0 WHERE id=$1`,[t.id,t.name,t.ticket_kind==='approval',sortOrder]);else await client.query("INSERT INTO ticket_types(event_id,name,requires_approval,sort_order) VALUES($1,$2,$3,$4)",[id,t.name,t.ticket_kind==='approval',sortOrder]);}
-  if(body.tickets.length){for(const t of old){if(!body.tickets.some(n=>n.id===t.id)){const used=(await client.query('SELECT 1 FROM guests WHERE ticket_type_id=$1 LIMIT 1',[t.id])).rowCount;if(used)await client.query('UPDATE ticket_types SET is_hidden=true WHERE id=$1',[t.id]);else await client.query('DELETE FROM ticket_types WHERE id=$1',[t.id]);}}}
-  else {await client.query('UPDATE ticket_types SET is_hidden=true WHERE event_id=$1',[id]);await client.query("INSERT INTO ticket_types(event_id,name,requires_approval) SELECT id,'Standard',requires_approval FROM events WHERE id=$1",[id]);}
+  const old=(await client.query('SELECT id, name FROM ticket_types WHERE event_id=$1',[id])).rows;
+  for(const [sortOrder,t] of body.tickets.entries()){
+    const match = old.find(o=>o.id===t.id || o.name.toLowerCase()===t.name.trim().toLowerCase());
+    if(match) await client.query(`UPDATE ticket_types SET name=$2,requires_approval=$3,is_hidden=false,sort_order=$4,payment_type='free',price_cents=0 WHERE id=$1`,[match.id,t.name.trim(),t.ticket_kind==='approval',sortOrder]);
+    else await client.query("INSERT INTO ticket_types(event_id,name,requires_approval,sort_order) VALUES($1,$2,$3,$4) ON CONFLICT (event_id, lower(name)) DO UPDATE SET requires_approval=EXCLUDED.requires_approval, is_hidden=false, sort_order=EXCLUDED.sort_order",[id,t.name.trim(),t.ticket_kind==='approval',sortOrder]);
+  }
+  if(body.tickets.length){
+    for(const t of old){
+      if(!body.tickets.some(n=>n.id===t.id || n.name.trim().toLowerCase()===t.name.toLowerCase())){
+        const used=(await client.query('SELECT 1 FROM guests WHERE ticket_type_id=$1 LIMIT 1',[t.id])).rowCount;
+        if(used)await client.query('UPDATE ticket_types SET is_hidden=true WHERE id=$1',[t.id]);
+        else await client.query('DELETE FROM ticket_types WHERE id=$1',[t.id]);
+      }
+    }
+  } else {
+    const hasStandard = old.some(o => o.name.toLowerCase() === 'standard');
+    if (!hasStandard) {
+      await client.query("INSERT INTO ticket_types(event_id,name,requires_approval) SELECT id,'Standard',requires_approval FROM events WHERE id=$1 ON CONFLICT DO NOTHING",[id]);
+    }
+  }
   }
   if(body.questions!==undefined){
   const qs=(await client.query('SELECT id FROM registration_questions WHERE event_id=$1',[id])).rows;

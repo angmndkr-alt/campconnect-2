@@ -160,6 +160,10 @@ export type Store = {
   activity: string[];
   notificationCount: number;
   registrationCount: number;
+  attendedEvents: string[];
+  pendingPhotos: any[];
+  approvePhoto: (id: string | number) => Promise<void>;
+  rejectPhoto: (id: string | number) => Promise<void>;
 };
 
 /** React context exposed to consumers via `useCampStore()`. */
@@ -177,6 +181,8 @@ export function CampStoreProvider({ children }: { children: ReactNode }) {
   const [calendars,setCalendars]=useState<any[]>([]);
   const [events,setEvents]=useState<EventItem[]>([]);
   const [registrations,setRegistrations]=useState<string[]>([]);
+  const [attendedEvents,setAttendedEvents]=useState<string[]>([]);
+  const [pendingPhotos,setPendingPhotos]=useState<any[]>([]);
   const [albums,setAlbums]=useState<PhotoAlbum[]>([]);
   const [messages,setMessages]=useState<CommunityMessage[]>([]);
   const [notices,setNotices]=useState<Notice[]>([]);
@@ -197,15 +203,29 @@ export function CampStoreProvider({ children }: { children: ReactNode }) {
     if(tokens.access){
       const {profile:p}=await api.get<any>('/auth/session');setProfile(p);
       const counts=await api.get<any>('/student-stats');setStudentStats(counts.stats);
+      if(counts.attendedEventIds)setAttendedEvents(counts.attendedEventIds);
       let managed:any[]=[];
-      if(p.role!=='student'){const d=await api.get<any>('/dashboard');managed=d.clubs;setActivity(d.activity.map((x:any)=>x.action+' · '+(x.details||'')));}
+      if(p.role!=='student'){
+        const [d,pend]=await Promise.all([api.get<any>('/dashboard'),api.get<any>('/gallery/pending').catch(()=>({albums:[]}))]);
+        managed=d.clubs;
+        setPendingPhotos(pend.albums||[]);
+        setActivity((d.activity||[]).map((x:any)=>{
+          if(x.message)return x.message;
+          const actor=x.actor_name||(x.user_id?'Student':'Guest');
+          if(x.action==='guest_registered')return `${actor} registered for ${x.details||'an event'}.`;
+          if(x.action==='event_created')return `${actor} created ${x.details||'an event'}.`;
+          if(x.action==='event_updated')return `${actor} updated ${x.details||'an event'}.`;
+          if(x.action==='event_deleted')return `${actor} deleted ${x.details||'an event'}.`;
+          return `${actor}: ${x.action} · ${x.details||''}`;
+        }));
+      }
       const calendar=managed[0];const u=mapUser(p,calendar);
       setAuth({role:u.role,email:u.email,name:u.name,adminId:u.role==='admin'?u.id:undefined,club_name:u.club});
       setAdmins([u]);
       if(p.role==='super_admin'){const data=await api.get<any>('/admin/users');setAdmins(data.users.map((x:any)=>mapUser(x,cs.calendars.find((c:any)=>x.calendars?.includes(c.id)))));}
       const following=await api.get<any>('/calendars/me/follows');setFollowed(following.follows.map((id:string)=>cs.calendars.find((c:any)=>c.id===id)?.name||id));
       const mine=await Promise.all(es.events.map(async(e:any)=>{const d=await api.get<any>('/events/'+e.id+'/registrations/me');return d.guest&&!d.guest.is_invalidated&&d.guest.status!=='declined'?e.id:null;}));setRegistrations(mine.filter(Boolean));
-    }else{setAuth(null);setProfile(null);setAdmins([]);setRegistrations([]);setFollowed([]);}
+    }else{setAuth(null);setProfile(null);setAdmins([]);setRegistrations([]);setAttendedEvents([]);setPendingPhotos([]);setFollowed([]);}
   },[]);
   useEffect(()=>{refreshData().catch(e=>{setError(e.message);toast.error(e.message);}).finally(()=>setLoading(false));const update=()=>refreshData().catch(e=>setError(e.message));window.addEventListener('campconnect:auth',update);window.addEventListener('focus',update);const timer=setInterval(update,30000);return()=>{window.removeEventListener('campconnect:auth',update);window.removeEventListener('focus',update);clearInterval(timer);};},[refreshData]);
   const invalidate=async()=>{await refreshData();await queryClient.invalidateQueries();};
@@ -213,7 +233,7 @@ export function CampStoreProvider({ children }: { children: ReactNode }) {
   const loginStudent=(email:string,password:string,name?:string)=>signIn(name?'/auth/signup':'/auth/login',email,password,name);
   const loginAdmin=(email:string,password:string)=>signIn('/auth/admin/login',email,password);
   const loginSuperAdmin=async(email:string,password:string)=>{const error=await loginAdmin(email,password);if(error)throw new Error(error);};
-  const logout=()=>{const token=tokens.refresh;tokens.clear();setAuth(null);setProfile(null);setAdmins([]);setRegistrations([]);setFollowed([]);queryClient.clear();api.post('/auth/logout',{refreshToken:token},{anonymous:true}).catch(()=>{});};
+  const logout=()=>{const token=tokens.refresh;tokens.clear();setAuth(null);setProfile(null);setAdmins([]);setRegistrations([]);setAttendedEvents([]);setPendingPhotos([]);setFollowed([]);queryClient.clear();api.post('/auth/logout',{refreshToken:token},{anonymous:true}).catch(()=>{});};
   const setFirstPassword=async(_id:string,next:string)=>guarded(async()=>{await api.post('/auth/first-login-password',{newPassword:next});await refreshData();});
   const changePassword=async(_id:string,current:string,next:string)=>{try{await api.post('/auth/change-password',{currentPassword:current,newPassword:next});await refreshData();return 'Password updated.';}catch(e){return e instanceof Error?e.message:'Password update failed.';}};
   const updateProfile=async(patch:any)=>guarded(async()=>{await api.patch('/auth/me',patch);await refreshData();});
@@ -227,6 +247,8 @@ export function CampStoreProvider({ children }: { children: ReactNode }) {
   const uploadAlbum=async(album:Omit<PhotoAlbum,'id'>)=>saveAlbum({...album,id:-1});
   const deleteAlbum=async(id:number)=>guarded(async()=>{await api.delete('/gallery/'+id);await invalidate();});
   const setCover=async(id:number,cover:string)=>guarded(async()=>{await api.patch('/gallery/'+id,{coverUrl:cover});await invalidate();});
+  const approvePhoto=async(id:string|number)=>guarded(async()=>{await api.post('/gallery/'+id+'/approve');await invalidate();});
+  const rejectPhoto=async(id:string|number)=>guarded(async()=>{await api.post('/gallery/'+id+'/reject');await invalidate();});
   const addMessage=async(channel:string,text:string)=>guarded(async()=>{const {channels}=await api.get<any>('/channels');const c=channels.find((c:any)=>c.slug===channel);if(!c)throw new Error('Channel not found.');const {message}=await api.post<any>('/channels/'+c.id+'/messages',{text});await invalidate();return mapMessage(message,channel);});
   const sendNotice=async(title:string,body:string,audience:string)=>guarded(async()=>{const host=admins.find(a=>a.id===auth?.adminId);const {announcement}=await api.post<any>('/admin/announcements',{title,body,audience,calendarId:host?.calendar_id||undefined});await invalidate();return mapNotice(announcement);});
   const toggleFollow=async(name:string)=>guarded(async()=>{const c=calendars.find(c=>c.name===name||c.id===name);if(!c)throw new Error('Club not found.');await api.post('/calendars/'+c.id+'/follow');await invalidate();});
@@ -235,7 +257,7 @@ export function CampStoreProvider({ children }: { children: ReactNode }) {
   const photos=albums.filter(a=>a.owner===auth?.adminId).reduce((n,a)=>n+a.photos.length,0);
   const notificationCount=notices.filter(n=>n.owner===auth?.adminId).length;
   const registrationCount=events.filter(e=>e.owner===auth?.adminId).reduce((n,e)=>n+e.attendees,0);
-  const value:Store={auth,profile,studentStats,leaderboard,calendars,refreshData,updateProfile,readNotices,markNoticesRead,loading,error,admins,events,registrations,albums,messages,notices,followed,activity,theme,photos,notificationCount,registrationCount,loginStudent,loginAdmin,loginSuperAdmin,logout,setFirstPassword,changePassword,updateAdmin,createEvent,deleteEvent,register,unregister,attendeeCount,saveAlbum,uploadAlbum,deleteAlbum,setCover,addMessage,sendNotice,toggleFollow,toggleTheme};
+  const value:Store={auth,profile,studentStats,leaderboard,calendars,refreshData,updateProfile,readNotices,markNoticesRead,loading,error,admins,events,registrations,attendedEvents,pendingPhotos,approvePhoto,rejectPhoto,albums,messages,notices,followed,activity,theme,photos,notificationCount,registrationCount,loginStudent,loginAdmin,loginSuperAdmin,logout,setFirstPassword,changePassword,updateAdmin,createEvent,deleteEvent,register,unregister,attendeeCount,saveAlbum,uploadAlbum,deleteAlbum,setCover,addMessage,sendNotice,toggleFollow,toggleTheme};
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 export function useCampStore():Store {const ctx=useContext(StoreContext);if(!ctx)throw new Error('Missing CampStoreProvider');return ctx;}

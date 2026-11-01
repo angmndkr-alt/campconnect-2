@@ -38,18 +38,38 @@ export default function ManageDashboard() {
   // QR Scanner video ref
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const scanLockRef = useRef(false);
 
   useEffect(() => {
     let controls: { stop: () => void } | null = null;
     let cancelled = false;
 
     if (isCameraActive && videoRef.current) {
+      setCameraError(null);
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setIsCameraActive(false);
+        setCameraError('Camera access requires HTTPS or localhost in your browser. Use manual verification below.');
+        return;
+      }
+
       const codeReader = new BrowserMultiFormatReader();
       codeReader
-        .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-          if (result) {
-            const token = result.getText();
-            verifyAndCheckInToken.mutate({ tokenOrId: token });
+        .decodeFromVideoDevice(undefined, videoRef.current, (result, _err, c) => {
+          if (result && !scanLockRef.current && !cancelled) {
+            scanLockRef.current = true;
+            const token = result.getText().trim();
+            verifyAndCheckInToken.mutate(
+              { tokenOrId: token },
+              {
+                onSettled: () => {
+                  setTimeout(() => {
+                    scanLockRef.current = false;
+                  }, 2000);
+                },
+              }
+            );
           }
         })
         .then((c) => {
@@ -59,13 +79,26 @@ export default function ManageDashboard() {
             controls = c;
           }
         })
-        .catch(()=>{setIsCameraActive(false);toast.error('Camera could not start. Allow camera access or verify a QR token manually.');});
+        .catch((err) => {
+          setIsCameraActive(false);
+          const isDenied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+          const msg = isDenied
+            ? 'Camera permission was denied. Please allow camera access in your browser or enter the pass token manually below.'
+            : (err?.message || 'Camera could not start. Please verify the QR token manually below.');
+          setCameraError(msg);
+          toast.error(msg);
+        });
     }
 
     return () => {
       cancelled = true;
       if (controls) {
         controls.stop();
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -411,8 +444,20 @@ export default function ManageDashboard() {
             {/* Video Viewport */}
             {isCameraActive && (
               <div className="mt-6 mx-auto overflow-hidden rounded-2xl border-2 border-primary bg-black max-w-sm">
-                <video ref={videoRef} className="h-64 w-full object-cover" />
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  autoPlay
+                  className="h-64 w-full object-cover"
+                />
               </div>
+            )}
+
+            {cameraError && (
+              <p role="alert" className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive text-left">
+                {cameraError}
+              </p>
             )}
 
             {/* Manual Code Search */}
@@ -437,13 +482,35 @@ export default function ManageDashboard() {
               }`}
             >
               <div className="flex items-start justify-between">
-                <div>
-                  <b className="font-display text-lg">{scanResult.success ? 'Success!' : 'Verification Failed'}</b>
-                  <p className="mt-1 text-sm">{scanResult.message}</p>
+                <div className="space-y-1.5 text-left">
+                  <b className="font-display text-lg flex items-center gap-2">
+                    {scanResult.success ? (
+                      <>
+                        <CheckCircle className="size-5 text-emerald-500" />
+                        Pass Validated & Checked In
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="size-5 text-destructive" />
+                        {scanResult.alreadyCheckedIn ? 'Pass Already Used' : 'Verification Rejected'}
+                      </>
+                    )}
+                  </b>
+                  <p className="text-sm font-medium">{scanResult.message}</p>
 
                   {scanResult.guest && (
-                    <div className="mt-3 text-xs opacity-90">
-                      Guest: <b>{scanResult.guest.full_name}</b> ({scanResult.guest.email})
+                    <div className="mt-3 rounded-xl border border-border/60 bg-card/60 p-3 text-xs text-foreground space-y-1">
+                      <div>Attendee: <b>{scanResult.guest.full_name}</b> ({scanResult.guest.email})</div>
+                      <div>Event: <b>{scanResult.eventTitle || eventTitle}</b></div>
+                      {scanResult.ticketName && <div>Pass Tier: <b>{scanResult.ticketName}</b></div>}
+                      {(scanResult.guest.department || scanResult.guest.year) && (
+                        <div className="text-muted-foreground">
+                          {[scanResult.guest.department, scanResult.guest.year].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
+                      <div>Status: <span className={`font-semibold ${scanResult.alreadyCheckedIn ? 'text-amber-500' : scanResult.success ? 'text-emerald-500' : 'text-destructive'}`}>
+                        {scanResult.alreadyCheckedIn ? 'Already Checked In' : scanResult.success ? 'Checked In' : 'Rejected'}
+                      </span></div>
                     </div>
                   )}
                 </div>

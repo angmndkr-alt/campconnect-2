@@ -74,7 +74,7 @@ const albumSchema = z.object({
   photoUrls: z.array(z.string().trim().max(500)).max(60).default([]),
 });
 
-/** GET /api/gallery — albums with their photos. */
+/** GET /api/gallery — approved albums with their photos. */
 galleryRouter.get(
   '/gallery',
   asyncHandler(async (_req, res) => {
@@ -88,13 +88,14 @@ galleryRouter.get(
               ) AS photos
          FROM albums a
          LEFT JOIN calendars c ON c.id = a.calendar_id
+        WHERE a.status = 'approved'
         ORDER BY a.created_at DESC`,
     );
     res.json({ albums });
   }),
 );
 
-/** POST /api/gallery — create an album. */
+/** POST /api/gallery — create or submit an album. */
 galleryRouter.post(
   '/gallery',
   requireAuth,
@@ -108,10 +109,13 @@ galleryRouter.post(
       [req.user!.id],
     );
 
+    // Student uploads require admin approval; admin uploads are approved immediately.
+    const status = req.user!.role === 'student' ? 'pending' : 'approved';
+
     const album = await one(
       `INSERT INTO albums (calendar_id, owner_id, title, event_name, date, description,
-                           posted_by, cover_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+                           posted_by, cover_url, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
         body.calendarId ?? null,
         req.user!.id,
@@ -121,6 +125,7 @@ galleryRouter.post(
         body.description ?? null,
         profile?.full_name ?? req.user!.email,
         body.photoUrls[0] ?? body.coverUrl,
+        status,
       ],
     );
 
@@ -137,7 +142,66 @@ galleryRouter.post(
   }),
 );
 
+/** GET /api/gallery/pending — list pending albums for administrator review. */
+galleryRouter.get(
+  '/gallery/pending',
+  requireAuth,
+  requireRole('club_admin', 'super_admin'),
+  asyncHandler(async (_req, res) => {
+    const albums = await rows(
+      `SELECT a.*, COALESCE(c.name, 'Student upload') AS club_name, c.tone AS club_tone,
+              p.full_name AS uploader_name, p.department AS uploader_department,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id', ph.id, 'photo_url', ph.photo_url)
+                                 ORDER BY ph.created_at)
+                   FROM album_photos ph WHERE ph.album_id = a.id),
+                '[]'::json
+              ) AS photos
+         FROM albums a
+         LEFT JOIN calendars c ON c.id = a.calendar_id
+         LEFT JOIN profiles p ON p.id = a.owner_id
+        WHERE a.status = 'pending'
+        ORDER BY a.created_at DESC`,
+    );
+    res.json({ albums });
+  }),
+);
+
 const albumParam = z.object({ id: uuidParam });
+
+/** POST /api/gallery/:id/approve — approve a pending photograph. */
+galleryRouter.post(
+  '/gallery/:id/approve',
+  requireAuth,
+  requireRole('club_admin', 'super_admin'),
+  asyncHandler(async (req, res) => {
+    const { id } = parseParams(req, albumParam);
+    const album = await one<{ id: string; status: string }>(
+      'SELECT id, status FROM albums WHERE id = $1',
+      [id],
+    );
+    if (!album) throw notFound('Album not found.');
+    await query("UPDATE albums SET status = 'approved' WHERE id = $1", [id]);
+    res.json({ ok: true, message: 'Photograph approved and published to the gallery.' });
+  }),
+);
+
+/** POST /api/gallery/:id/reject — reject a pending photograph. */
+galleryRouter.post(
+  '/gallery/:id/reject',
+  requireAuth,
+  requireRole('club_admin', 'super_admin'),
+  asyncHandler(async (req, res) => {
+    const { id } = parseParams(req, albumParam);
+    const album = await one<{ id: string; status: string }>(
+      'SELECT id, status FROM albums WHERE id = $1',
+      [id],
+    );
+    if (!album) throw notFound('Album not found.');
+    await query("UPDATE albums SET status = 'rejected' WHERE id = $1", [id]);
+    res.json({ ok: true, message: 'Photograph rejected.' });
+  }),
+);
 
 /** DELETE /api/gallery/:id */
 galleryRouter.delete(

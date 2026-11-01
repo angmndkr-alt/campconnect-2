@@ -191,30 +191,16 @@ async function seedEvents(): Promise<void> {
       ],
     );
 
-    await query(
-      `INSERT INTO ticket_types (event_id, name, requires_approval, capacity, sort_order)
-       SELECT id, $2, $3, $4, 0 FROM events WHERE slug = $1
-       ON CONFLICT DO NOTHING`,
-      [
-        e.slug,
-        e.approval ? 'Participant Pass (Approval Required)' : 'Standard',
-        e.approval,
-        e.capacity,
-      ],
+    const ticketName = e.approval ? 'Participant Pass (Approval Required)' : 'Standard';
+    const existingTicket = await one<{ id: string }>(
+      `SELECT id FROM ticket_types WHERE event_id = (SELECT id FROM events WHERE slug = $1) AND lower(name) = lower($2)`,
+      [e.slug, ticketName],
     );
-
-    // Ensure the event has at least one ticket type even if the row above
-    // matched an existing event.
-    const missingTicket = await one<{ n: number }>(
-      `SELECT count(*)::int AS n FROM ticket_types WHERE event_id =
-         (SELECT id FROM events WHERE slug = $1)`,
-      [e.slug],
-    );
-    if ((missingTicket?.n ?? 0) === 0) {
+    if (!existingTicket) {
       await query(
         `INSERT INTO ticket_types (event_id, name, requires_approval, capacity, sort_order)
-         SELECT id, 'Standard', $2, $3, 0 FROM events WHERE slug = $1`,
-        [e.slug, e.approval, e.capacity],
+         SELECT id, $2, $3, $4, 0 FROM events WHERE slug = $1`,
+        [e.slug, ticketName, e.approval, e.capacity],
       );
     }
   }
@@ -291,8 +277,10 @@ async function seedGuests(): Promise<void> {
     if (!g.event) continue;
 
     const already = await one<{ id: string }>(
-      'SELECT id FROM guests WHERE event_id = $1 AND lower(email) = lower($2)',
-      [g.event.id, g.email],
+      `SELECT id FROM guests
+        WHERE (event_id = $1 AND (lower(email) = lower($2) OR (lower($2) LIKE '%@pvppcoe.ac.in' AND lower(email) = lower(replace($2, '@pvppcoe.ac.in', '@campus.edu')))))
+           OR qr_token = $3`,
+      [g.event.id, g.email, g.token],
     );
     if (already) continue;
 

@@ -107,6 +107,28 @@ contentRouter.get('/announcements',asyncHandler(async(req,res)=>{
  res.json({announcements:[...list,...guestUpdates].sort((a:any,b:any)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())});
 }));
 
+function formatActivityMessage(item: {
+  action: string;
+  details: string | null;
+  actor_name: string | null;
+  club_name: string | null;
+}): string {
+  const actor = item.actor_name || 'Guest';
+  const target = item.details || 'an event';
+  switch (item.action) {
+    case 'guest_registered':
+      return `${actor} registered for ${target}.`;
+    case 'event_created':
+      return `${actor} created ${target}.`;
+    case 'event_updated':
+      return `${actor} updated ${target}.`;
+    case 'event_deleted':
+      return `${actor} deleted ${target}.`;
+    default:
+      return `${actor} performed ${item.action} on ${target}.`;
+  }
+}
+
 /** GET /api/activity — recent audit trail for the admin dashboard. */
 contentRouter.get(
   '/activity',
@@ -114,18 +136,45 @@ contentRouter.get(
   requireRole('club_admin', 'super_admin'),
   asyncHandler(async (req, res) => {
     const { calendarId } = parseQuery(req, z.object({ calendarId: z.string().optional() }));
+    const isSuper = req.user!.role === 'super_admin';
+    const userId = req.user!.id;
 
     if (calendarId) {
       await assertCalendarRole(req, calendarId, 'admin');
     }
 
-    const list = calendarId
-      ? await rows(
-          `SELECT * FROM activity_log WHERE calendar_id = $1
-            ORDER BY created_at DESC LIMIT 20`,
-          [calendarId],
-        )
-      : await rows('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 20');
+    const querySql = calendarId
+      ? `SELECT a.*, c.name AS club_name, p.full_name AS actor_name
+           FROM activity_log a
+           LEFT JOIN calendars c ON c.id = a.calendar_id
+           LEFT JOIN profiles p ON p.id = a.user_id
+          WHERE a.calendar_id = $1
+          ORDER BY a.created_at DESC LIMIT 20`
+      : isSuper
+      ? `SELECT a.*, c.name AS club_name, p.full_name AS actor_name
+           FROM activity_log a
+           LEFT JOIN calendars c ON c.id = a.calendar_id
+           LEFT JOIN profiles p ON p.id = a.user_id
+          ORDER BY a.created_at DESC LIMIT 20`
+      : `SELECT a.*, c.name AS club_name, p.full_name AS actor_name
+           FROM activity_log a
+           LEFT JOIN calendars c ON c.id = a.calendar_id
+           LEFT JOIN profiles p ON p.id = a.user_id
+          WHERE a.calendar_id IN (
+            SELECT ca.calendar_id FROM calendar_admins ca WHERE ca.profile_id = $1
+          )
+          ORDER BY a.created_at DESC LIMIT 20`;
+
+    const rawList = calendarId
+      ? await rows(querySql, [calendarId])
+      : isSuper
+      ? await rows(querySql)
+      : await rows(querySql, [userId]);
+
+    const list = rawList.map((item: any) => ({
+      ...item,
+      message: formatActivityMessage(item),
+    }));
 
     res.json({ activity: list });
   }),
@@ -184,13 +233,28 @@ contentRouter.get(
          (SELECT count(*) FROM check_ins)::int                    AS total_checked_in`,
     );
 
-    const activity = await rows(
-      `SELECT a.*, c.name AS club_name
-         FROM activity_log a
-         LEFT JOIN calendars c ON c.id = a.calendar_id
-        ORDER BY a.created_at DESC
-        LIMIT 8`,
-    );
+    const activityQuery = isSuper
+      ? `SELECT a.*, c.name AS club_name, p.full_name AS actor_name
+           FROM activity_log a
+           LEFT JOIN calendars c ON c.id = a.calendar_id
+           LEFT JOIN profiles p ON p.id = a.user_id
+          ORDER BY a.created_at DESC
+          LIMIT 8`
+      : `SELECT a.*, c.name AS club_name, p.full_name AS actor_name
+           FROM activity_log a
+           LEFT JOIN calendars c ON c.id = a.calendar_id
+           LEFT JOIN profiles p ON p.id = a.user_id
+          WHERE a.calendar_id IN (
+            SELECT ca.calendar_id FROM calendar_admins ca WHERE ca.profile_id = $1
+          )
+          ORDER BY a.created_at DESC
+          LIMIT 8`;
+
+    const rawActivity = await rows(activityQuery, isSuper ? [] : [userId]);
+    const activity = rawActivity.map((item: any) => ({
+      ...item,
+      message: formatActivityMessage(item),
+    }));
 
     const perClub = await Promise.all(
       clubs.map(async (club) => {
@@ -242,7 +306,9 @@ contentRouter.get(
 );
 /** Real participation totals, earned on check-in. */
 contentRouter.get('/student-stats',requireAuth,asyncHandler(async(req,res)=>{
- const stats=await one(`SELECT count(*)::int AS attended,COALESCE(sum(e.xp),0)::int AS xp FROM guests g JOIN events e ON e.id=g.event_id WHERE g.profile_id=$1 AND g.checked_in_at IS NOT NULL AND g.is_invalidated=false`,[req.user!.id]);res.json({stats});
+ const stats=await one(`SELECT count(*)::int AS attended,COALESCE(sum(e.xp),0)::int AS xp FROM guests g JOIN events e ON e.id=g.event_id WHERE g.profile_id=$1 AND g.checked_in_at IS NOT NULL AND g.is_invalidated=false`,[req.user!.id]);
+ const attended=await rows<{event_id:string}>(`SELECT g.event_id FROM guests g WHERE g.profile_id=$1 AND g.checked_in_at IS NOT NULL AND g.is_invalidated=false`,[req.user!.id]);
+ res.json({stats,attendedEventIds:attended.map(r=>r.event_id)});
 }));
 contentRouter.get('/students/leaderboard',asyncHandler(async(_req,res)=>{
  const list=await rows(`SELECT p.id,p.full_name,p.department,count(g.id)::int AS attended,COALESCE(sum(e.xp),0)::int AS xp FROM profiles p LEFT JOIN guests g ON g.profile_id=p.id AND g.checked_in_at IS NOT NULL AND g.is_invalidated=false LEFT JOIN events e ON e.id=g.event_id WHERE p.role='student' GROUP BY p.id ORDER BY xp DESC,p.full_name LIMIT 100`);res.json({leaderboard:list});
